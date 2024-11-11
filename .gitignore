@@ -50,6 +50,7 @@ src/tools/info/ucx_info
 src/tools/perf/ucx_perftest
 src/tools/perf/ucx_perftest_daemon
 src/tools/profile/ucx_read_profile
+src/tools/profile/ucx_profile_to_perfetto
 test/apps/test_dlopen_cfg_print
 test/apps/test_link_map
 test/apps/test_ucp_dlopen
@@ -114,3 +115,10 @@ cmake/*.cmake
 *.gcda
 lcov_data/
 .noinst/
+go.work
+go.work.sum
+bindings/go/pkg/
+bindings/go/go.sum
+
+.cache
+configure~
