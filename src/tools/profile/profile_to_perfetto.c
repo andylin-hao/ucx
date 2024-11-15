@@ -1,7 +1,10 @@
 #include "profile_utils.h"
 #include <getopt.h>
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
+
+#include <ucs/datastruct/khash.h>
 
 typedef struct options {
     const char *filename;
@@ -14,6 +17,7 @@ typedef struct {
     uint32_t pid;
     uint32_t tid;
     uint64_t ts;
+    uint64_t event_id;
 } trace_event_t;
 
 static void usage()
@@ -48,8 +52,10 @@ static int parse_args(int argc, char **argv, options_t *opts)
     return 0;
 }
 
+KHASH_MAP_INIT_INT64(request_ids, size_t);
+
 static void convert_to_perfetto(FILE *fp, const profile_data_t *data,
-                                options_t *opts, int thread_idx)
+                                options_t *opts, int thread_idx, uint64_t start_time)
 {
     profile_thread_data_t        *thread      = &data->threads[thread_idx];
     size_t                        num_records = thread->header->num_records;
@@ -59,7 +65,11 @@ static void convert_to_perfetto(FILE *fp, const profile_data_t *data,
     const ucs_profile_record_t   *rec, *se, **sep;
     trace_event_t                 event;
     int                           nesting;
-    uint64_t start_time;
+    khash_t(request_ids) reqids;
+    int hash_extra_status;
+    khiter_t hash_it;
+    size_t reqid;
+    size_t reqid_ctr              = 1;
 
 #define WRITE_TRACE_EVENT(_fp, _event)                                         \
     fprintf(_fp,                                                               \
@@ -101,15 +111,11 @@ static void convert_to_perfetto(FILE *fp, const profile_data_t *data,
         }
     }
 
-    if (num_records > 0) {
-        start_time = thread->records[0].timestamp;
-    } else {
-        start_time = 0;
-    }
+    kh_init_inplace(request_ids, &reqids);
 
+    event.pid = data->header->pid;
     for (rec = thread->records; rec < thread->records + num_records; ++rec) {
         loc       = &data->locations[rec->location];
-        event.pid = 1;
         event.tid = thread->header->tid;
         event.ts  = (rec->timestamp - start_time) / 1000;
         strncpy(event.cat, "function", sizeof(event.cat));
@@ -129,9 +135,50 @@ static void convert_to_perfetto(FILE *fp, const profile_data_t *data,
             WRITE_TRACE_EVENT(fp, event);
             break;
         case UCS_PROFILE_TYPE_SAMPLE:
+            strncpy(event.name, loc->name, sizeof(event.name));
+            event.ph = 'i';
+            WRITE_TRACE_EVENT(fp, event);
+            break;
         case UCS_PROFILE_TYPE_REQUEST_NEW:
         case UCS_PROFILE_TYPE_REQUEST_EVENT:
         case UCS_PROFILE_TYPE_REQUEST_FREE:
+            strncpy(event.name, loc->name, sizeof(event.name));
+            if (loc->type == UCS_PROFILE_TYPE_REQUEST_NEW) {
+                hash_it = kh_put(request_ids, &reqids, rec->param64,
+                                 &hash_extra_status);
+                if (hash_it == kh_end(&reqids)) {
+                    if (hash_extra_status == UCS_KH_PUT_KEY_PRESENT) {
+                        /* old request was not released, replace it */
+                        hash_it = kh_get(request_ids, &reqids, rec->param64);
+                        reqid = reqid_ctr++;
+                        kh_value(&reqids, hash_it) = reqid;
+                    } else {
+                        reqid = 0; /* error inserting to hash */
+                    }
+                } else {
+                    /* new request */
+                    reqid = reqid_ctr++;
+                    kh_value(&reqids, hash_it) = reqid;
+                }
+                event.ph = 'b';
+            } else {
+                hash_it = kh_get(request_ids, &reqids, rec->param64);
+                if (hash_it == kh_end(&reqids)) {
+                    reqid = 0; /* could not find request */
+                } else {
+                    assert(reqid_ctr > 1);
+                    reqid = kh_value(&reqids, hash_it);
+                    if (loc->type == UCS_PROFILE_TYPE_REQUEST_FREE) {
+                        kh_del(request_ids, &reqids, hash_it);
+                    }
+                }
+                if (loc->type == UCS_PROFILE_TYPE_REQUEST_FREE) {
+                    event.ph = 'e';
+                } else {
+                    event.ph = 'n';
+                }
+            }
+            event.event_id = reqid;
         default:
             break;
         }
@@ -141,7 +188,9 @@ static void convert_to_perfetto(FILE *fp, const profile_data_t *data,
 static void write_perfetto_trace(const profile_data_t *data, options_t *opts)
 {
     int   thread_idx;
+    profile_thread_data_t *thread;
     FILE *fp;
+    uint64_t start_time = 0;
     char  perfetto_filename[1024] = {0};
 
 #define WRITE_PERFETTO_HEADER(_fp) fprintf(_fp, "{\"traceEvents\":[\n")
@@ -158,9 +207,17 @@ static void write_perfetto_trace(const profile_data_t *data, options_t *opts)
         return;
     }
 
+    for (thread_idx = 0; thread_idx < data->num_threads; thread_idx++) {
+        thread = &data->threads[thread_idx];
+        if (thread->header->num_records > 0 && (start_time == 0 ||
+                                                thread->records[0].timestamp < start_time)) {
+            start_time = thread->records[0].timestamp;
+        }
+    }
+
     WRITE_PERFETTO_HEADER(fp);
     for (thread_idx = 0; thread_idx < data->num_threads; thread_idx++) {
-        convert_to_perfetto(fp, data, opts, thread_idx);
+        convert_to_perfetto(fp, data, opts, thread_idx, start_time);
     }
     WRITE_PERFETTO_FOOTER(fp);
 
