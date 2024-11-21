@@ -18,6 +18,8 @@
 #include <ucs/type/class.h>
 #include <ucs/profile/profile.h>
 
+#include <cuda_runtime_api.h>
+
 #define UCT_CUDA_IPC_PUT 0
 #define UCT_CUDA_IPC_GET 1
 
@@ -118,6 +120,8 @@ uct_cuda_ipc_post_cuda_async_copy(uct_ep_h tl_ep, uint64_t remote_addr,
         ((direction == UCT_CUDA_IPC_PUT) ? mapped_rem_addr : iov[0].buffer);
     src = (CUdeviceptr)
         ((direction == UCT_CUDA_IPC_PUT) ? iov[0].buffer : mapped_rem_addr);
+
+    cudaDeviceSynchronize();
 
     status = UCT_CUDADRV_FUNC_LOG_ERR(cuMemcpyDtoDAsync(dst, src, iov[0].length,
                                                         stream));
