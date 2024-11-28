@@ -71,8 +71,8 @@ uct_cuda_ipc_post_cuda_async_copy(uct_ep_h tl_ep, uint64_t remote_addr,
     uct_cuda_ipc_event_desc_t *cuda_ipc_event;
     ucs_queue_head_t *outstanding_queue;
     ucs_status_t status;
-    CUdeviceptr dst, src;
-    CUstream stream;
+    void *dst, *src;
+    cudaStream_t stream;
     size_t offset;
 
     if (0 == iov[0].length) {
@@ -116,15 +116,12 @@ uct_cuda_ipc_post_cuda_async_copy(uct_ep_h tl_ep, uint64_t remote_addr,
         return UCS_ERR_NO_MEMORY;
     }
 
-    dst = (CUdeviceptr)
-        ((direction == UCT_CUDA_IPC_PUT) ? mapped_rem_addr : iov[0].buffer);
-    src = (CUdeviceptr)
-        ((direction == UCT_CUDA_IPC_PUT) ? iov[0].buffer : mapped_rem_addr);
+    dst = (direction == UCT_CUDA_IPC_PUT) ? mapped_rem_addr : iov[0].buffer;
+    src = (direction == UCT_CUDA_IPC_PUT) ? iov[0].buffer : mapped_rem_addr;
 
-    cudaDeviceSynchronize();
-
-    status = UCT_CUDADRV_FUNC_LOG_ERR(cuMemcpyDtoDAsync(dst, src, iov[0].length,
+    status = UCT_CUDA_FUNC_LOG_ERR(cudaMemcpyAsync(dst, src, iov[0].length, cudaMemcpyDeviceToDevice,
                                                         stream));
+    status = UCT_CUDA_FUNC_LOG_ERR(cudaStreamSynchronize(stream));
     if (UCS_OK != status) {
         ucs_mpool_put(cuda_ipc_event);
         return status;
@@ -133,7 +130,7 @@ uct_cuda_ipc_post_cuda_async_copy(uct_ep_h tl_ep, uint64_t remote_addr,
     iface->stream_refcount[key->dev_num]++;
     cuda_ipc_event->stream_id = key->dev_num;
 
-    status = UCT_CUDADRV_FUNC_LOG_ERR(cuEventRecord(cuda_ipc_event->event,
+    status = UCT_CUDA_FUNC_LOG_ERR(cudaEventRecord(cuda_ipc_event->event,
                                                     stream));
     if (UCS_OK != status) {
         ucs_mpool_put(cuda_ipc_event);

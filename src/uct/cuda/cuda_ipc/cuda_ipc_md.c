@@ -112,7 +112,7 @@ static ucs_status_t
 uct_cuda_ipc_mem_add_reg(void *addr, uct_cuda_ipc_memh_t *memh,
                          uct_cuda_ipc_lkey_t **key_p)
 {
-    CUipcMemHandle *legacy_handle;
+    cudaIpcMemHandle_t *legacy_handle;
     uct_cuda_ipc_lkey_t *key;
     ucs_status_t status;
 #if HAVE_CUDA_FABRIC
@@ -130,7 +130,7 @@ uct_cuda_ipc_mem_add_reg(void *addr, uct_cuda_ipc_memh_t *memh,
         return UCS_ERR_NO_MEMORY;
     }
 
-    legacy_handle = (CUipcMemHandle*)&key->ph;
+    legacy_handle = (cudaIpcMemHandle_t*)&key->ph;
     UCT_CUDADRV_FUNC_LOG_ERR(cuMemGetAddressRange(&key->d_bptr, &key->b_len,
                 (CUdeviceptr)addr));
 
@@ -216,7 +216,7 @@ non_ipc:
     goto common_path;
 #endif
 legacy_path:
-    status = UCT_CUDADRV_FUNC(cuIpcGetMemHandle(legacy_handle, (CUdeviceptr)addr),
+    status = UCT_CUDA_FUNC(cudaIpcGetMemHandle(legacy_handle, addr),
                               UCS_LOG_LEVEL_ERROR);
     if (status != UCS_OK) {
         goto err;

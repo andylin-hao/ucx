@@ -37,11 +37,11 @@ uct_cuda_base_query_devices_common(
         uct_tl_device_resource_t **tl_devices_p, unsigned *num_tl_devices_p)
 {
     ucs_sys_device_t sys_device = UCS_SYS_DEVICE_ID_UNKNOWN;
-    CUdevice cuda_device;
+    int cuda_device;
     ucs_status_t status;
 
     if (uct_cuda_base_is_context_active()) {
-        status = UCT_CUDADRV_FUNC_LOG_ERR(cuCtxGetDevice(&cuda_device));
+        status = UCT_CUDA_FUNC_LOG_ERR(cudaGetDevice(&cuda_device));
         if (status != UCS_OK) {
             return status;
         }
@@ -67,9 +67,9 @@ uct_cuda_base_query_devices(
 }
 
 #if (__CUDACC_VER_MAJOR__ >= 100000)
-void CUDA_CB uct_cuda_base_iface_stream_cb_fxn(void *arg)
+void CUDART_CB uct_cuda_base_iface_stream_cb_fxn(void *arg)
 #else
-void CUDA_CB uct_cuda_base_iface_stream_cb_fxn(CUstream hStream, CUresult status,
+void CUDART_CB uct_cuda_base_iface_stream_cb_fxn(cudaStream_t hStream, cudaError_t status,
                                                void *arg)
 #endif
 {

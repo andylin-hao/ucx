@@ -159,8 +159,8 @@ UCS_PROFILE_FUNC(ucs_status_t, uct_cuda_copy_mem_reg,
 {
     uint64_t flags = UCT_MD_MEM_REG_FIELD_VALUE(params, flags, FIELD_FLAGS, 0);
     ucs_log_level_t log_level;
-    CUmemorytype memType;
-    CUresult result;
+    struct cudaPointerAttributes attrs;
+    cudaError_t result;
     ucs_status_t status;
 
     if (!uct_cuda_base_is_context_active()) {
@@ -168,19 +168,18 @@ UCS_PROFILE_FUNC(ucs_status_t, uct_cuda_copy_mem_reg,
         return uct_md_dummy_mem_reg(md, address, length, params, memh_p);
     }
 
-    result = cuPointerGetAttribute(&memType, CU_POINTER_ATTRIBUTE_MEMORY_TYPE,
-                                   (CUdeviceptr)(address));
-    if ((result == CUDA_SUCCESS) && ((memType == CU_MEMORYTYPE_HOST)    ||
-                                     (memType == CU_MEMORYTYPE_UNIFIED) ||
-                                     (memType == CU_MEMORYTYPE_DEVICE))) {
+    result = cudaPointerGetAttributes(&attrs, address);
+    if ((result == cudaSuccess) && ((attrs.type == cudaMemoryTypeHost)    ||
+                                     (attrs.type == cudaMemoryTypeManaged) ||
+                                     (attrs.type == cudaMemoryTypeDevice))) {
         /* only host memory not allocated by cuda needs to be registered */
         return uct_md_dummy_mem_reg(md, address, length, params, memh_p);
     }
 
     log_level = (flags & UCT_MD_MEM_FLAG_HIDE_ERRORS) ? UCS_LOG_LEVEL_DEBUG :
                 UCS_LOG_LEVEL_ERROR;
-    status    = UCT_CUDADRV_FUNC(cuMemHostRegister(address, length,
-                                                   CU_MEMHOSTREGISTER_PORTABLE),
+    status    = UCT_CUDA_FUNC(cudaHostRegister(address, length,
+                                                   cudaHostRegisterPortable),
                                  log_level);
     if (status != UCS_OK) {
         return status;
@@ -204,7 +203,7 @@ UCS_PROFILE_FUNC(ucs_status_t, uct_cuda_copy_mem_dereg,
         return UCS_OK;
     }
 
-    status = UCT_CUDADRV_FUNC_LOG_ERR(cuMemHostUnregister(address));
+    status = UCT_CUDA_FUNC_LOG_ERR(cudaHostUnregister(address));
     if (status != UCS_OK) {
         return status;
     }
@@ -352,7 +351,7 @@ uct_cuda_copy_mem_alloc(uct_md_h uct_md, size_t *length_p, void **address_p,
         }
 
         if (md->config.enable_fabric != UCS_YES) {
-            status = UCT_CUDADRV_FUNC(cuMemAlloc(&alloc_handle->ptr,
+            status = UCT_CUDA_FUNC(cudaMalloc(&alloc_handle->ptr,
                                                  alloc_handle->length),
                                       log_level);
             if (status == UCS_OK) {
@@ -364,9 +363,9 @@ uct_cuda_copy_mem_alloc(uct_md_h uct_md, size_t *length_p, void **address_p,
                 alloc_handle->length);
         status = UCS_ERR_NO_MEMORY;
     } else if (mem_type == UCS_MEMORY_TYPE_CUDA_MANAGED) {
-        status = UCT_CUDADRV_FUNC(
-                cuMemAllocManaged(&alloc_handle->ptr, alloc_handle->length,
-                                  CU_MEM_ATTACH_GLOBAL), log_level);
+        status = UCT_CUDA_FUNC(
+                cudaMallocManaged(&alloc_handle->ptr, alloc_handle->length,
+                                  cudaMemAttachGlobal), log_level);
     } else {
         ucs_log(log_level,
                 "allocation mem_types supported: cuda, cuda-managed");
@@ -463,7 +462,7 @@ static ucs_status_t uct_cuda_copy_mem_free(uct_md_h md, uct_mem_h memh)
     if (alloc_handle->is_vmm) {
         status = uct_cuda_copy_mem_release_fabric(alloc_handle);
     } else {
-        status = UCT_CUDADRV_FUNC_LOG_ERR(cuMemFree(alloc_handle->ptr));
+        status = UCT_CUDA_FUNC_LOG_ERR(cudaFree(alloc_handle->ptr));
     }
 
     ucs_free(alloc_handle);

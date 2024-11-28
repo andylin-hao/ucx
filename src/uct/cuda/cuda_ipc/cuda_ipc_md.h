@@ -33,7 +33,7 @@ typedef struct uct_cuda_ipc_md_handle {
     CUmemoryPool              pool;
 } uct_cuda_ipc_md_handle_t;
 #else
-typedef CUipcMemHandle uct_cuda_ipc_md_handle_t;
+typedef cudaIpcMemHandle_t uct_cuda_ipc_md_handle_t;
 #endif
 
 

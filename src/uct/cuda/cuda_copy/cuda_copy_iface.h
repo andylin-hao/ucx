@@ -41,7 +41,7 @@ typedef ucs_static_bitmap_s(UCT_CUDA_MEMORY_TYPES_MAP) uct_cu_stream_bitmap_t;
 
 typedef struct uct_cuda_copy_queue_desc {
     /* stream on which asynchronous memcpy operations are enqueued */
-    CUstream                    stream;
+    cudaStream_t                stream;
     /* queue of cuda events */
     ucs_queue_head_t            event_queue;
     /* needed to allow queue descriptor to be added to iface->active_queue */
@@ -58,7 +58,7 @@ typedef struct uct_cuda_copy_iface {
     /* list of queues which require progress */
     ucs_queue_head_t            active_queue;
     /* stream used to issue short operations */
-    CUstream                    short_stream;
+    cudaStream_t                short_stream;
     /* fd to get event notifications */
     int                         eventfd;
     /* stream used to issue short operations */
@@ -92,7 +92,7 @@ typedef struct uct_cuda_copy_iface_config {
 
 
 typedef struct uct_cuda_copy_event_desc {
-    CUevent          event;
+    cudaEvent_t      event;
     uct_completion_t *comp;
     ucs_queue_elem_t queue;
 } uct_cuda_copy_event_desc_t;

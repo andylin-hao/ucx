@@ -9,6 +9,7 @@
 #include <uct/base/uct_md.h>
 #include <uct/cuda/base/cuda_md.h>
 #include <cuda.h>
+#include <cuda_runtime.h>
 
 
 extern uct_component_t uct_cuda_copy_component;
@@ -56,7 +57,7 @@ typedef struct uct_cuda_copy_md_config {
  * copy alloc handle.
  */
 typedef struct uct_cuda_copy_alloc_handle {
-    CUdeviceptr                 ptr;
+    void*                       ptr;
     size_t                      length;
     uint8_t                     is_vmm;
 #if HAVE_CUDA_FABRIC

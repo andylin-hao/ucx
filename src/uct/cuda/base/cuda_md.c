@@ -15,34 +15,34 @@
 #include <cuda.h>
 
 
-void uct_cuda_base_get_sys_dev(CUdevice cuda_device,
+void uct_cuda_base_get_sys_dev(int cuda_device,
                                ucs_sys_device_t *sys_dev_p)
 {
     ucs_sys_bus_id_t bus_id;
-    CUresult cu_err;
+    cudaError_t cuda_err;
     int attrib;
     ucs_status_t status;
 
     /* PCI domain id */
-    cu_err = cuDeviceGetAttribute(&attrib, CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID,
+    cuda_err = cudaDeviceGetAttribute(&attrib, cudaDevAttrPciDomainId,
                                   cuda_device);
-    if (cu_err != CUDA_SUCCESS) {
+    if (cuda_err != cudaSuccess) {
         goto err;
     }
     bus_id.domain = (uint16_t)attrib;
 
     /* PCI bus id */
-    cu_err = cuDeviceGetAttribute(&attrib, CU_DEVICE_ATTRIBUTE_PCI_BUS_ID,
+    cuda_err = cudaDeviceGetAttribute(&attrib, cudaDevAttrPciBusId,
                                   cuda_device);
-    if (cu_err != CUDA_SUCCESS) {
+    if (cuda_err != cudaSuccess) {
         goto err;
     }
     bus_id.bus = (uint8_t)attrib;
 
     /* PCI slot id */
-    cu_err = cuDeviceGetAttribute(&attrib, CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID,
+    cuda_err = cudaDeviceGetAttribute(&attrib, cudaDevAttrPciDeviceId,
                                   cuda_device);
-    if (cu_err != CUDA_SUCCESS) {
+    if (cuda_err != cudaSuccess) {
         goto err;
     }
     bus_id.slot = (uint8_t)attrib;
@@ -68,23 +68,18 @@ uct_cuda_base_query_md_resources(uct_component_t *component,
 {
     const unsigned sys_device_priority = 10;
     ucs_sys_device_t sys_dev;
-    CUdevice cuda_device;
+    int cuda_device;
     ucs_status_t status;
     char device_name[10];
     int i, num_gpus;
 
-    status = UCT_CUDADRV_FUNC(cuDeviceGetCount(&num_gpus), UCS_LOG_LEVEL_DIAG);
+    status = UCT_CUDA_FUNC(cudaGetDeviceCount(&num_gpus), UCS_LOG_LEVEL_DIAG);
     if ((status != UCS_OK) || (num_gpus == 0)) {
         return uct_md_query_empty_md_resource(resources_p, num_resources_p);
     }
 
     for (i = 0; i < num_gpus; ++i) {
-        status = UCT_CUDADRV_FUNC(cuDeviceGet(&cuda_device, i),
-                                  UCS_LOG_LEVEL_DIAG);
-        if (status != UCS_OK) {
-            continue;
-        }
-
+        cuda_device = i;
         uct_cuda_base_get_sys_dev(cuda_device, &sys_dev);
         if (sys_dev == UCS_SYS_DEVICE_ID_UNKNOWN) {
             continue;

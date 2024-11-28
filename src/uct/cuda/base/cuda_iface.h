@@ -10,6 +10,7 @@
 #include <ucs/sys/preprocessor.h>
 #include <ucs/profile/profile.h>
 #include <ucs/async/eventfd.h>
+#include <cuda_runtime.h>
 #include <cuda.h>
 #include <nvml.h>
 
@@ -67,6 +68,35 @@ const char *uct_cuda_base_cu_get_error_string(CUresult result);
 #define UCT_CUDADRV_FUNC_LOG_DEBUG(_func) \
     UCT_CUDADRV_FUNC(_func, UCS_LOG_LEVEL_DEBUG)
 
+#define UCT_CUDA_FUNC(_func, _log_level) \
+    ({ \
+        ucs_status_t _status = UCS_OK; \
+        do { \
+            cudaError_t _result = (_func); \
+            if (cudaErrorNotReady == _result) { \
+                _status = UCS_INPROGRESS; \
+            } else if (cudaSuccess != _result) { \
+                ucs_log((_log_level), "%s failed: %s", \
+                        UCS_PP_MAKE_STRING(_func), \
+                        cudaGetErrorString(_result)); \
+                _status = UCS_ERR_IO_ERROR; \
+            } \
+        } while (0); \
+        _status; \
+    })
+
+
+#define UCT_CUDA_FUNC_LOG_ERR(_func) \
+    UCT_CUDA_FUNC(_func, UCS_LOG_LEVEL_ERROR)
+
+
+#define UCT_CUDA_FUNC_LOG_WARN(_func) \
+    UCT_CUDA_FUNC(_func, UCS_LOG_LEVEL_WARN)
+
+
+#define UCT_CUDA_FUNC_LOG_DEBUG(_func) \
+    UCT_CUDA_FUNC(_func, UCS_LOG_LEVEL_DEBUG)
+
 
 static UCS_F_ALWAYS_INLINE int uct_cuda_base_is_context_active()
 {
@@ -114,15 +144,15 @@ uct_cuda_base_query_devices_common(
         uct_tl_device_resource_t **tl_devices_p, unsigned *num_tl_devices_p);
 
 void
-uct_cuda_base_get_sys_dev(CUdevice cuda_device,
+uct_cuda_base_get_sys_dev(int cuda_device,
                           ucs_sys_device_t *sys_dev_p);
 
 ucs_status_t uct_cuda_base_iface_event_fd_get(uct_iface_h tl_iface, int *fd_p);
 
 #if (__CUDACC_VER_MAJOR__ >= 100000)
-void CUDA_CB uct_cuda_base_iface_stream_cb_fxn(void *arg);
+void CUDART_CB uct_cuda_base_iface_stream_cb_fxn(void *arg);
 #else
-void CUDA_CB uct_cuda_base_iface_stream_cb_fxn(CUstream hStream,  CUresult status,
+void CUDART_CB uct_cuda_base_iface_stream_cb_fxn(cudaStream_t hStream, cudaError_t status,
                                                void *arg);
 #endif
 

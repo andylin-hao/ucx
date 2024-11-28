@@ -128,8 +128,8 @@ static ucs_status_t uct_cuda_ipc_close_memhandle(uct_cuda_ipc_cache_region_t *re
     } else
 #endif
     {
-        return UCT_CUDADRV_FUNC_LOG_WARN(cuIpcCloseMemHandle(
-                    (CUdeviceptr)region->mapped_addr));
+        return UCT_CUDA_FUNC_LOG_WARN(cudaIpcCloseMemHandle(
+                    region->mapped_addr));
     }
 
     return status;
@@ -154,17 +154,17 @@ static void uct_cuda_ipc_cache_purge(uct_cuda_ipc_cache_t *cache)
 }
 
 static ucs_status_t
-uct_cuda_ipc_open_memhandle_legacy(CUipcMemHandle memh,
-                                   CUdeviceptr *mapped_addr)
+uct_cuda_ipc_open_memhandle_legacy(cudaIpcMemHandle_t memh,
+                                   void **mapped_addr)
 {
-    CUresult cuerr;
+    cudaError_t cuda_err;
 
-    cuerr = cuIpcOpenMemHandle(mapped_addr, memh,
-                               CU_IPC_MEM_LAZY_ENABLE_PEER_ACCESS);
-    if (cuerr != CUDA_SUCCESS) {
+    cuda_err = cudaIpcOpenMemHandle(mapped_addr, memh,
+                               cudaIpcMemLazyEnablePeerAccess);
+    if (cuda_err != cudaSuccess) {
         ucs_debug("cuIpcOpenMemHandle() failed: %s",
-                  uct_cuda_base_cu_get_error_string(cuerr));
-        return (cuerr == CUDA_ERROR_ALREADY_MAPPED) ?
+                  cudaGetErrorString(cuda_err));
+        return (cuda_err == cudaErrorAlreadyMapped) ?
             UCS_ERR_ALREADY_EXISTS : UCS_ERR_INVALID_PARAM;
     }
 
@@ -332,7 +332,7 @@ err:
 #endif
 
 static ucs_status_t uct_cuda_ipc_open_memhandle(uct_cuda_ipc_rkey_t *key,
-                                                CUdeviceptr *mapped_addr)
+                                                void **mapped_addr)
 {
 
 #if HAVE_CUDA_FABRIC
@@ -529,7 +529,7 @@ UCS_PROFILE_FUNC(ucs_status_t, uct_cuda_ipc_map_memhandle, (key, mapped_addr),
         }
     }
 
-    status = uct_cuda_ipc_open_memhandle(key, (CUdeviceptr*)mapped_addr);
+    status = uct_cuda_ipc_open_memhandle(key, mapped_addr);
     if (ucs_unlikely(status != UCS_OK)) {
         if (ucs_likely(status == UCS_ERR_ALREADY_EXISTS)) {
             /* unmap all overlapping regions and retry*/
@@ -537,14 +537,14 @@ UCS_PROFILE_FUNC(ucs_status_t, uct_cuda_ipc_map_memhandle, (key, mapped_addr),
                                                   UCS_PTR_BYTE_OFFSET(key->d_bptr,
                                                                       key->b_len));
             status = uct_cuda_ipc_open_memhandle(key,
-                                                 (CUdeviceptr*)mapped_addr);
+                                                 mapped_addr);
             if (ucs_unlikely(status != UCS_OK)) {
                 if (ucs_likely(status == UCS_ERR_ALREADY_EXISTS)) {
                     /* unmap all cache entries and retry */
                     uct_cuda_ipc_cache_purge(cache);
                     status =
                         uct_cuda_ipc_open_memhandle(key,
-                                                    (CUdeviceptr*)mapped_addr);
+                                                    mapped_addr);
                     if (status != UCS_OK) {
                         ucs_fatal("%s: failed to open ipc mem handle. addr:%p "
                                   "len:%lu (%s)", cache->name,
