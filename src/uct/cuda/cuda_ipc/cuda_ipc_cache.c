@@ -128,8 +128,11 @@ static ucs_status_t uct_cuda_ipc_close_memhandle(uct_cuda_ipc_cache_region_t *re
     } else
 #endif
     {
-        return UCT_CUDADRV_FUNC_LOG_WARN(cuIpcCloseMemHandle(
+        printf("%d/%d: Close memhandle for address %p\n", getpid(), ucs_get_tid(), region->mapped_addr);
+        status = UCT_CUDADRV_FUNC_LOG_WARN(cuIpcCloseMemHandle(
                     (CUdeviceptr)region->mapped_addr));
+        printf("%d/%d finished closing memhandle\n", getpid(), ucs_get_tid());
+        return status;
     }
 
     return status;
@@ -161,6 +164,7 @@ uct_cuda_ipc_open_memhandle_legacy(CUipcMemHandle memh,
 
     cuerr = cuIpcOpenMemHandle(mapped_addr, memh,
                                CU_IPC_MEM_LAZY_ENABLE_PEER_ACCESS);
+    printf("%d/%d: Open memhandle for addr %p\n", getpid(), ucs_get_tid(), (void *)*mapped_addr);
     if (cuerr != CUDA_SUCCESS) {
         ucs_debug("cuIpcOpenMemHandle() failed: %s",
                   uct_cuda_base_cu_get_error_string(cuerr));

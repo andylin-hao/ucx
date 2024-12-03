@@ -74,6 +74,8 @@ uct_cuda_ipc_post_cuda_async_copy(uct_ep_h tl_ep, uint64_t remote_addr,
     CUdeviceptr dst, src;
     CUstream stream;
     size_t offset;
+    uint64_t *mem_handle;
+    int i;
 
     if (0 == iov[0].length) {
         ucs_trace_data("Zero length request: skip it");
@@ -98,6 +100,13 @@ uct_cuda_ipc_post_cuda_async_copy(uct_ep_h tl_ep, uint64_t remote_addr,
     mapped_rem_addr = (void *) ((uintptr_t) mapped_addr + offset);
     ucs_assert(offset <= key->b_len);
 
+    mem_handle = (uint64_t *) key->ph.reserved;
+    printf("%d/%d: Map addr %p with offset %lu to memhandle: ", getpid(), ucs_get_tid(), mapped_addr, offset);
+    for (i = 0; i < 8; i++) {
+        printf("%lx ", mem_handle[i]);
+    }
+    printf("\n");
+
     if (!iface->streams_initialized) {
         status = uct_cuda_ipc_iface_init_streams(iface);
         if (UCS_OK != status) {
@@ -121,14 +130,15 @@ uct_cuda_ipc_post_cuda_async_copy(uct_ep_h tl_ep, uint64_t remote_addr,
     src = (CUdeviceptr)
         ((direction == UCT_CUDA_IPC_PUT) ? iov[0].buffer : mapped_rem_addr);
 
-    cudaDeviceSynchronize();
-
+    printf("%d/%d: memcpy from %p to %p with length %lu\n", getpid(), ucs_get_tid(), (void *)src, (void *)dst, iov[0].length);
+    
     status = UCT_CUDADRV_FUNC_LOG_ERR(cuMemcpyDtoDAsync(dst, src, iov[0].length,
                                                         stream));
     if (UCS_OK != status) {
         ucs_mpool_put(cuda_ipc_event);
         return status;
     }
+    printf("%d/%d: finish memcpy\n", getpid(), ucs_get_tid());
 
     iface->stream_refcount[key->dev_num]++;
     cuda_ipc_event->stream_id = key->dev_num;

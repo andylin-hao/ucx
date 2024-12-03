@@ -21,6 +21,51 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+static uct_cuda_ipc_memh_t global_ipc_memh = {0};
+
+static inline ucs_status_t uct_cuda_global_ipc_memh_init()
+{
+    CUdevice cu_device;
+
+    UCT_CUDA_IPC_GET_DEVICE(cu_device);
+
+    global_ipc_memh.pid     = getpid();
+    global_ipc_memh.dev_num = -1;
+    ucs_list_head_init(&global_ipc_memh.list);
+
+    return UCS_OK;
+}
+
+static inline int check_duplicate_ipc_handle(CUdeviceptr address, CUipcMemHandle *handle)
+{
+    uct_cuda_ipc_lkey_t *key;
+    // CUdeviceptr mapped_buffer;
+
+    if (global_ipc_memh.pid != getpid())
+        uct_cuda_global_ipc_memh_init();
+
+    ucs_list_for_each(key, &global_ipc_memh.list, link) {
+      if (((uintptr_t)address >= key->d_bptr) &&
+          ((uintptr_t)address < (key->d_bptr + key->b_len))) {
+        /* Check if the handle still points to a valid address.
+         * The address could be freed and allocated to a new buffer.
+         */
+        // if (UCS_OK != UCT_CUDADRV_FUNC(cuIpcOpenMemHandle(&mapped_buffer, key->ph, CU_IPC_MEM_LAZY_ENABLE_PEER_ACCESS), UCS_LOG_LEVEL_DEBUG)) {
+        //     return 0;
+        // }
+
+        // cuIpcCloseMemHandle(mapped_buffer);
+        *handle = key->ph;
+        goto found;
+      }
+    }
+
+    return 0;
+found:
+    printf("Found duplicate handle for addr %p\n", (void *)address);
+    return 1;
+}
+
 static ucs_config_field_t uct_cuda_ipc_md_config_table[] = {
     {"", "", NULL,
      ucs_offsetof(uct_cuda_ipc_md_config_t, super), UCS_CONFIG_TYPE_TABLE(uct_md_config_table)},
@@ -115,6 +160,8 @@ uct_cuda_ipc_mem_add_reg(void *addr, uct_cuda_ipc_memh_t *memh,
     CUipcMemHandle *legacy_handle;
     uct_cuda_ipc_lkey_t *key;
     ucs_status_t status;
+    uint64_t *mem_handle;
+    int i;
 #if HAVE_CUDA_FABRIC
 #define UCT_CUDA_IPC_QUERY_NUM_ATTRS 2
     CUmemGenericAllocationHandle handle;
@@ -133,6 +180,7 @@ uct_cuda_ipc_mem_add_reg(void *addr, uct_cuda_ipc_memh_t *memh,
     legacy_handle = (CUipcMemHandle*)&key->ph;
     UCT_CUDADRV_FUNC_LOG_ERR(cuMemGetAddressRange(&key->d_bptr, &key->b_len,
                 (CUdeviceptr)addr));
+    printf("%d/%d: Get address range for addr %p: %p %lu\n", getpid(), ucs_get_tid(), addr, (void *)key->d_bptr, key->b_len);
 
 #if HAVE_CUDA_FABRIC
     /* cuda_ipc can handle VMM, mallocasync, and legacy pinned device so need to
@@ -216,8 +264,23 @@ non_ipc:
     goto common_path;
 #endif
 legacy_path:
+    // if (!check_duplicate_ipc_handle((CUdeviceptr) addr, legacy_handle)){
+    //     status = UCT_CUDADRV_FUNC(cuIpcGetMemHandle(legacy_handle, (CUdeviceptr)addr),
+    //                             UCS_LOG_LEVEL_ERROR);
+    //     if (status == UCS_OK) {
+    //         memcpy(global_key, key, sizeof(*key));
+    //         ucs_list_add_tail(&global_ipc_memh.list, &global_key->link);
+    //     }
+    // } else
+    //     status = UCS_OK;
     status = UCT_CUDADRV_FUNC(cuIpcGetMemHandle(legacy_handle, (CUdeviceptr)addr),
                               UCS_LOG_LEVEL_ERROR);
+    mem_handle = (uint64_t *)legacy_handle->reserved;
+    printf("%d/%d: Get memhandle for addr %p: ", getpid(), ucs_get_tid(), (void *)addr);
+    for (i = 0; i < 8; i++) {
+        printf("%lx ", mem_handle[i]);
+    }
+    printf("\n");
     if (status != UCS_OK) {
         goto err;
     }
@@ -246,10 +309,10 @@ uct_cuda_ipc_mkey_pack(uct_md_h md, uct_mem_h tl_memh, void *address,
     ucs_status_t status;
 
     ucs_list_for_each(key, &memh->list, link) {
-        if (((uintptr_t)address >= key->d_bptr) &&
-            ((uintptr_t)address < (key->d_bptr + key->b_len))) {
-            goto found;
-        }
+      if (((uintptr_t)address >= key->d_bptr) &&
+          ((uintptr_t)address < (key->d_bptr + key->b_len))) {
+        goto found;
+      }
     }
 
     status = uct_cuda_ipc_mem_add_reg(address, memh, &key);
