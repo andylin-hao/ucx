@@ -318,10 +318,17 @@ uct_cuda_ipc_is_peer_accessible(uct_cuda_ipc_component_t *component,
          * Now, we immediately insert into cache to save on calling
          * OpenMemHandle for the same handle because the cache is globally
          * accessible using rkey->pid. */
+#if HAVE_CUDA_FABRIC
         status = uct_cuda_ipc_map_memhandle(rkey, &d_mapped);
+#else
+        status = UCT_CUDADRV_FUNC_LOG_WARN(cuIpcOpenMemHandle((CUdeviceptr *)&d_mapped, rkey->ph, CU_IPC_MEM_LAZY_ENABLE_PEER_ACCESS));
+#endif
 
         *accessible = ((status == UCS_OK) || (status == UCS_ERR_ALREADY_EXISTS))
                       ? UCS_YES : UCS_NO;
+#if !HAVE_CUDA_FABRIC
+        status = UCT_CUDADRV_FUNC_LOG_WARN(cuIpcCloseMemHandle((CUdeviceptr)d_mapped));
+#endif
     }
 
     status = (*accessible == UCS_YES) ? UCS_OK : UCS_ERR_UNREACHABLE;
