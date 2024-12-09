@@ -1281,7 +1281,7 @@ ucs_status_t uct_ib_md_open_common(uct_ib_md_t *md,
         /* Check peer memory driver is loaded, different driver versions use 
          * different paths */
         uct_ib_check_gpudirect_driver(
-                md, "/sys/kernel/mm/memory_peers/nv_mem/version",
+                md, "/sys/kernel/mm/memory_peers/itr_peer_mem/version",
                 UCS_MEMORY_TYPE_CUDA);
         uct_ib_check_gpudirect_driver(
                 md, "/sys/module/nvidia_peermem/version",
